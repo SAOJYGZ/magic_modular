@@ -23,7 +23,7 @@ def render():
         return
     df = pd.DataFrame(data)
 
-    # 统一日期字段为 Python date
+    # Python date
     df['startDate_dt'] = pd.to_datetime(
         df.get('tradeStartDate', df.get('startDate')),
         errors='coerce'
@@ -33,7 +33,7 @@ def render():
         errors='coerce'
     ).dt.date
 
-    # —— 参数选择区 —— #
+    # parameter selection
     st.subheader("请选择分析参数")
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -71,10 +71,9 @@ def render():
         st.warning("请至少选择一个产品类型！")
         return
 
-    # 格式化产品标题
     product_title = format_product_title(selected_products)
 
-    # 数据过滤
+    # data filtering
     df_f = df[
         df['tradeType'].isin(selected_types) &
         df['counterparty'].isin(selected_cptys) &
@@ -86,7 +85,6 @@ def render():
 
     freq_str = 'W' if freq == '周' else 'M'
 
-    # 指标处理
     if metric_type != '期末存续':
         date_field = 'startDate_dt' if '新增' in metric_type else 'tradeTerminationDate_dt'
         if '当期' in metric_type:
@@ -99,9 +97,7 @@ def render():
         df_sel['日期'] = pd.to_datetime(df_sel[date_field])
         df_sel['周期'] = df_sel['日期'].dt.to_period(freq_str).dt.to_timestamp()
 
-        # 按周期 & 对手方聚合，跨产品累加
         agg = df_sel.groupby(['周期', 'counterparty'], as_index=False)[['名义本金','保证金']].sum()
-        # 只保留所选指标
         agg = agg[['周期', 'counterparty', indicator]]
     else:
         # 期末存续处理
@@ -127,7 +123,7 @@ def render():
             return
         agg = pd.concat(frames, ignore_index=True)
 
-    # 绘图：堆叠直方图
+    # 堆叠直方图
     st.subheader(f"{product_title} {metric_type}（按{freq}）—{indicator}堆叠直方图")
     fig_stack = px.bar(
         agg,
@@ -140,7 +136,7 @@ def render():
     fig_stack.update_layout(legend_title_text='交易对手方')
     st.plotly_chart(fig_stack, use_container_width=True)
 
-    # 绘图：汇总直方图
+    # 汇总直方图
     st.subheader(f"{product_title} {metric_type}（按{freq}）—{indicator}汇总直方图")
     sum_df = agg.groupby('周期', as_index=False)[indicator].sum()
     fig_sum = px.bar(
