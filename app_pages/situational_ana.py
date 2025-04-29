@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
+
 def render():
     st.header("产品情景分析")
     st.subheader("开发中...请勿使用！")
@@ -47,47 +48,83 @@ def render():
         )
         st.table(df_params)
 
-        # 收益情景模拟
-        prices = np.linspace(0, 200, 201)
-        # Snowball 到期回报示意：
-        # price <= 敲入障碍：按标的跌幅承担损失；否则兑付本金+票息
-        payoff = np.where(
-            prices <= ki_barrier,
-            prices,  # 按底价兑付
-            100 + coupon_rate  # 本金 + 固定票息%
-        )
+        # 解析期限（月数）
+        try:
+            months = int(term.rstrip("M"))
+        except:
+            months = 24
 
+        # 时间序列：0 到 months
+        time = np.arange(0, months + 1)
+
+        # 模拟标的价格路径（GBM）
+        dt = 1/12
+        mu = 0.0
+        vol = 0.2
+        prices = [100]
+        for _ in range(months):
+            shock = np.random.normal((mu - 0.5 * vol**2) * dt, vol * np.sqrt(dt))
+            prices.append(prices[-1] * np.exp(shock))
+        prices = np.array(prices)
+
+        # 检测敲入/敲出事件
+        ki_events = np.where(prices <= ki_barrier)[0]
+        ko_events = np.where(prices >= ko_barrier)[0]
+        ki_date = int(ki_events[0]) if ki_events.size > 0 else None
+        ko_date = int(ko_events[0]) if ko_events.size > 0 else None
+
+        # 计算回报
+        principal = 100
+        coupon = coupon_rate
+        if ko_date is not None and ko_date > 0:
+            payoff = principal + coupon
+            end_msg = f"第{ko_date}月敲出，产品提前结束，回报 {payoff:.2f}%"
+        else:
+            if ki_date is not None:
+                payoff = prices[-1]
+                end_msg = f"到期未敲出，已发生敲入（第{ki_date}月），按标的价格({payoff:.2f}%)兑付"
+            else:
+                payoff = principal + coupon
+                end_msg = f"到期未敲出且未敲入，按本金+票息({payoff:.2f}%)兑付"
+
+        # 绘制路径与事件
         fig = go.Figure()
-        # 回报曲线
         fig.add_trace(go.Scatter(
-            x=prices, y=payoff,
-            mode='lines', name='到期回报', line=dict(color='firebrick', width=2)
+            x=time, y=prices,
+            mode='lines', name='标的价格', line=dict(width=2)
         ))
-        # 本金+票息水平
-        level = 100 + coupon_rate
-        fig.add_shape(type='line', x0=0, x1=200, y0=level, y1=level,
-            line=dict(color='gray', width=1, dash='dash'))
-        fig.add_annotation(x=200, y=level, text='本金+票息', showarrow=False,
-            xanchor='right', font=dict(color='gray'))
-        # 敲入障碍线
-        fig.add_shape(type='line', x0=ki_barrier, x1=ki_barrier, y0=min(payoff), y1=max(payoff),
-            line=dict(color='blue', width=2, dash='dot'))
-        fig.add_annotation(x=ki_barrier, y=max(payoff), text='敲入障碍', showarrow=False,
-            yanchor='bottom', font=dict(color='blue'))
-        # 敲出障碍线
-        fig.add_shape(type='line', x0=ko_barrier, x1=ko_barrier, y0=min(payoff), y1=max(payoff),
-            line=dict(color='green', width=2, dash='dash'))
-        fig.add_annotation(x=ko_barrier, y=max(payoff), text='敲出障碍', showarrow=False,
-            yanchor='bottom', font=dict(color='green'))
+        # 障碍线
+        fig.add_shape(type='line', x0=0, x1=months, y0=ki_barrier, y1=ki_barrier,
+                      line=dict(color='blue', width=1, dash='dash'))
+        fig.add_shape(type='line', x0=0, x1=months, y0=ko_barrier, y1=ko_barrier,
+                      line=dict(color='green', width=1, dash='dash'))
+        # 事件标记
+        if ki_date is not None:
+            fig.add_trace(go.Scatter(
+                x=[ki_date], y=[prices[ki_date]],
+                mode='markers', name='敲入',
+                marker=dict(symbol='x', size=10, color='blue')
+            ))
+        if ko_date is not None:
+            fig.add_trace(go.Scatter(
+                x=[ko_date], y=[prices[ko_date]],
+                mode='markers', name='敲出',
+                marker=dict(symbol='star', size=12, color='green')
+            ))
 
         fig.update_layout(
-            title='Snowball 产品到期回报示意图',
-            xaxis_title='标的到期价格 (%)',
-            yaxis_title='到期兑付 (%)',
-            xaxis=dict(range=[0, 200]), yaxis=dict(range=[0, level*1.1]),
-            legend=dict(orientation='h', y=1.02, x=1)
+            title='标的价格路径与敲入/敲出事件',
+            xaxis_title='时间（月）',
+            yaxis_title='标的价格 (%)',
+            xaxis=dict(range=[0, months]),
+            yaxis=dict(range=[prices.min() * 0.9, prices.max() * 1.1]),
+            legend=dict(orientation='h', y=1.05, x=0.5, xanchor='center')
         )
         st.plotly_chart(fig, use_container_width=True)
 
+        # 模拟结果
+        st.write(end_msg)
+
     else:
         st.info("请在上方输入参数，然后点击'生成分析图表'")
+
