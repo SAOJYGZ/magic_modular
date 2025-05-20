@@ -1,5 +1,4 @@
 import pandas as pd
-from functools import lru_cache
 import streamlit as st
 
 @st.cache_data
